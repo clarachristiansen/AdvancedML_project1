@@ -162,35 +162,6 @@ def train(model, optimizer, data_loader, epochs, device):
             progress_bar.set_postfix(loss=f"⠀{loss.item():12.4f}", epoch=f"{epoch+1}/{epochs}")
             progress_bar.update()
 
-class FcNetwork(nn.Module):
-    def __init__(self, input_dim, num_hidden):
-        """
-        Initialize a fully connected network for the DDPM, where the forward function also take time as an argument.
-        
-        parameters:
-        input_dim: [int]
-            The dimension of the input data.
-        num_hidden: [int]
-            The number of hidden units in the network.
-        """
-        super(FcNetwork, self).__init__()
-        self.network = nn.Sequential(nn.Linear(input_dim+1, num_hidden), nn.ReLU(), 
-                                     nn.Linear(num_hidden, num_hidden), nn.ReLU(), 
-                                     nn.Linear(num_hidden, input_dim))
-
-    def forward(self, x, t):
-        """"
-        Forward function for the network.
-        
-        parameters:
-        x: [torch.Tensor]
-            The input data of dimension `(batch_size, input_dim)`
-        t: [torch.Tensor]
-            The time steps to use for the forward pass of dimension `(batch_size, 1)`
-        """
-        x_t_cat = torch.cat([x, t], dim=1)
-        return self.network(x_t_cat)
-
 class Unet(torch.nn.Module):
     """
     A simple U-Net architecture for MNIST that takes an input image and time
@@ -280,22 +251,9 @@ if __name__ == "__main__":
     from torchvision import datasets, transforms
     from torchvision.utils import save_image, make_grid
 
-    # # Parse arguments
-    # import argparse
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('mode', type=str, default='train', choices=['train', 'sample', 'sampleMnist'], help='what to do when running the script (default: %(default)s)')
-    # parser.add_argument('--data', type=str, default='tg', choices=['tg', 'cb', 'mnist'], help='dataset to use {tg: two Gaussians, cb: chequerboard} (default: %(default)s)')
-    # parser.add_argument('--model', type=str, default='Week3/model.pt', help='file to save model to or load model from (default: %(default)s)')
-    # parser.add_argument('--samples', type=str, default='Week3/samples.png', help='file to save samples in (default: %(default)s)')
-    # parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'], help='torch device (default: %(default)s)')
-    # parser.add_argument('--batch-size', type=int, default=10000, metavar='N', help='batch size for training (default: %(default)s)')
-    # parser.add_argument('--epochs', type=int, default=5, metavar='N', help='number of epochs to train (default: %(default)s)')
-    # parser.add_argument('--lr', type=float, default=1e-3, metavar='V', help='learning rate for training (default: %(default)s)')
-
-    args = ['compareMnist', 'mnist', 'UnetMnistmodel.pt', 'Unetsamples.png', 'cpu', 64, 100, 1e-3] #parser.parse_args()
-    print('# Options')
-    for value in args:
-        print(value)
+    import fid
+    #          mode        data          model            sample save    device batch epo  lr
+    args = ['computeFid', 'mnist', 'UnetMnistmodel.pt', 'Unetsamples.png', 'cpu', 10, 100, 1e-3]
 
     transform = transform = transforms.Compose([transforms.ToTensor(), 
                                                 transforms.Lambda(lambda x : x + torch.rand(x.shape)/255.0), 
@@ -309,7 +267,7 @@ if __name__ == "__main__":
 
     # Define the network
     num_hidden = 64
-    network = Unet() #FcNetwork(D, num_hidden)
+    network = Unet()
 
     # Set the number of steps in the diffusion process
     T = 1000
@@ -380,3 +338,62 @@ if __name__ == "__main__":
         combine = torch.cat([samples1, samples2, samples3], dim=0)
         grid = make_grid(combine, nrow=4, padding=2)
         save_image(grid, "MnistComparison.png")
+
+    elif args[0] == "computeFid":
+        import time
+        samples = args[5]
+
+        real_batch = next(iter(train_loader))[0]
+
+        real_batch = real_batch.view(-1, 1, 28, 28)
+        print(real_batch.shape)
+        
+        model.load_state_dict(torch.load('UnetMnistmodel.pt', map_location=torch.device(args[4]),weights_only=True))
+
+        model.eval()
+        t1 = time.time()
+        with torch.no_grad():
+            batch = (model.sample((args[5],D))).cpu()
+        t2 = time.time()
+        batch = batch.view(-1, 1, 28, 28)
+
+        print(f"Time for {samples} samples for model latent DDPM = {t2-t1}")
+        print(f"{(t2-t1)/samples} seconds per sample")
+
+        fid_res = fid.compute_fid(real_batch, batch, args[4])
+        print(f"Fid for DDPM: {fid_res}")
+
+        #Implement code to work for different values of beta in the VAE
+        #model = latentDDPM(network, T=T).to(args[4])
+        model.load_state_dict(torch.load('UnetMnistmodel.pt', map_location=torch.device(args[4]),weights_only=True))
+        model.eval()
+        t1 = time.time()
+        with torch.no_grad():
+            batch = (model.sample((args[5],D))).cpu()
+        t2 = time.time()
+        batch = batch.view(-1, 1, 28, 28)
+
+        print(f"Time for {samples} samples for model latent DDPM = {t2-t1}")
+        print(f"{(t2-t1)/samples} seconds per sample")
+
+        fid_res = fid.compute_fid(real_batch, batch, args[4])
+        print(f"Fid for DDPM: {fid_res}")
+
+        #model = latentDDPM(network, T=T).to(args[4])
+        model.load_state_dict(torch.load('UnetMnistmodel.pt', map_location=torch.device(args[4]),weights_only=True))
+        model.eval()
+        t1 = time.time()
+        with torch.no_grad():
+            batch = (model.sample((args[5],D))).cpu()
+        t2 = time.time()
+        batch = batch.view(-1, 1, 28, 28)
+
+        print(f"Time for {samples} samples for model latent DDPM = {t2-t1}")
+        print(f"{(t2-t1)/samples} seconds per sample")
+
+        fid_res = fid.compute_fid(real_batch, batch, args[4])
+        print(f"Fid for DDPM: {fid_res}")
+    
+    elif args[0] == "plotPrior":
+        #Create code for plotting the prior, learned dimensions of latent DDPM and posterior
+        hej = 0
