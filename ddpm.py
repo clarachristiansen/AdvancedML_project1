@@ -126,7 +126,6 @@ class DDPM(nn.Module):
         """
         return self.negative_elbo(x).mean()
 
-
 def train(model, optimizer, data_loader, epochs, device):
     """
     Train a Flow model.
@@ -162,7 +161,6 @@ def train(model, optimizer, data_loader, epochs, device):
             # Update progress bar
             progress_bar.set_postfix(loss=f"⠀{loss.item():12.4f}", epoch=f"{epoch+1}/{epochs}")
             progress_bar.update()
-
 
 class FcNetwork(nn.Module):
     def __init__(self, input_dim, num_hidden):
@@ -277,105 +275,6 @@ class Unet(torch.nn.Module):
         signal = torch.reshape(signal, (*signal.shape[:-3], -1))  # (..., 1 * 28 * 28)
         return signal
 
-class TwoGaussians:
-    def __init__(self):
-        """
-        A simple class to define an uneven mixture of two Gaussians.
-        """
-
-        mixture = td.Categorical(torch.tensor([1/5, 4/5]))
-        components = td.Independent(
-            td.Normal(
-                torch.tensor(
-                    [
-                        [0.75, 0.75],
-                        [0.25, 0.25],
-                    ]
-                ),
-                torch.tensor(
-                    [
-                        [0.1, 0.1],
-                        [0.1, 0.1],
-                    ]
-                ),
-            ),
-            1,
-        )
-
-        self.distribution = MixtureSameFamily(mixture, components)
-
-        self.xlim = (0, 1)
-        self.ylim = (0, 1)
-
-    def __call__(self):
-        """
-        Return the distribution.
-        Returns:
-        distribution: [torch.distributions.Distribution]
-        """
-        return self.distribution
-
-class ExtendedUniform(td.Uniform):
-    def __init__(self, low, high, validate_args=None, outside_value=-float('inf')):
-        """
-        A uniform distribution that returns a constant value for values outside the support
-        """
-        super(ExtendedUniform, self).__init__(low, high, validate_args)
-        self.outside_value = outside_value
-
-    def log_prob(self, value):
-        # Check if the value is within the support
-        in_support = (value >= self.low) & (value <= self.high)
-        safe_value = torch.where(in_support, value, self.low)
-        log_prob = super().log_prob(safe_value)
-        
-        # Set log_prob to self.outside_value for values outside the support
-        log_prob = torch.where(in_support, log_prob, torch.full_like(log_prob, self.outside_value))
-        return log_prob
-    
-    @td.constraints.dependent_property(is_discrete=False, event_dim=0)
-    def support(self):
-        return td.constraints.real
-
-class Chequerboard:
-    def __init__(self, grid_size=3, bounds=[0.0, 1.0]):
-        """
-        A simple class to define the Chequerboard distribution.
-        """
-
-        square_size = (bounds[1] - bounds[0]) / grid_size
-
-        weights = []
-        low_list = []
-        high_list = []
-        for i in range(grid_size):
-            for j in range(grid_size):
-                if (i + j) % 2 == 0:
-                    low_x = bounds[0] + i * square_size
-                    high_x = low_x + square_size
-                    low_y = bounds[0] + j * square_size
-                    high_y = low_y + square_size
-                    
-                    low_list.append([low_x, low_y])
-                    high_list.append([high_x, high_y])
-                    weights.append(1.0)
-
-        mixture = td.Categorical(torch.tensor(weights))
-        #components = td.Independent(td.uniform.Uniform(torch.tensor(low_list), torch.tensor(high_list)), 1)
-        components = td.Independent(ExtendedUniform(torch.tensor(low_list), torch.tensor(high_list)), 1)
-        self.distribution = MixtureSameFamily(mixture, components)
-
-        self.xlim = bounds
-        self.ylim = bounds
-
-    def __call__(self):
-        """
-        Return the distribution.
-        Returns:
-        distribution: [torch.distributions.Distribution]
-        """
-        return self.distribution
-
 if __name__ == "__main__":
     import torch.utils.data
     from torchvision import datasets, transforms
@@ -393,32 +292,20 @@ if __name__ == "__main__":
     # parser.add_argument('--epochs', type=int, default=5, metavar='N', help='number of epochs to train (default: %(default)s)')
     # parser.add_argument('--lr', type=float, default=1e-3, metavar='V', help='learning rate for training (default: %(default)s)')
 
-    args = ['sampleMnist', 'mnist', 'UnetMnistmodel.pt', 'Unetsamples.png', 'cpu', 64, 100, 1e-3] #parser.parse_args()
+    args = ['compareMnist', 'mnist', 'UnetMnistmodel.pt', 'Unetsamples.png', 'cpu', 64, 100, 1e-3] #parser.parse_args()
     print('# Options')
     for value in args:
         print(value)
 
-    if args[1] == "tg" or args[1] == "cb":
-        # Generate the data
-        n_data = 10000000
-        toy = {'tg': TwoGaussians, 'cb': Chequerboard}[args[1]]()
-        transform = lambda x: (x-0.5)*2.0
-        train_loader = torch.utils.data.DataLoader(transform(toy().sample((n_data,))), batch_size=args[5], shuffle=True)
-        test_loader = torch.utils.data.DataLoader(transform(toy().sample((n_data,))), batch_size=args[5], shuffle=True)
+    transform = transform = transforms.Compose([transforms.ToTensor(), 
+                                                transforms.Lambda(lambda x : x + torch.rand(x.shape)/255.0), 
+                                                transforms.Lambda(lambda x : (x-0.5)*2.0),
+                                                transforms.Lambda(lambda x : x.flatten())])
+    train_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train = True, download = True, transform = transform), batch_size=args[5], shuffle=True)
+    test_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train = False, download = True, transform = transform), batch_size=args[5], shuffle=True)
 
-        # Get the dimension of the dataset
-        D = next(iter(train_loader)).shape[1]
-
-    else:
-        transform = transform = transforms.Compose([transforms.ToTensor(), 
-                                                    transforms.Lambda(lambda x : x + torch.rand(x.shape)/255.0), 
-                                                    transforms.Lambda(lambda x : (x-0.5)*2.0),
-                                                    transforms.Lambda(lambda x : x.flatten())])
-        train_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train = True, download = True, transform = transform), batch_size=args[5], shuffle=True)
-        test_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train = False, download = True, transform = transform), batch_size=args[5], shuffle=True)
-
-        # Get the dimension of the dataset
-        D = next(iter(train_loader))[0].shape[1]
+    # Get the dimension of the dataset
+    D = next(iter(train_loader))[0].shape[1]
 
     # Define the network
     num_hidden = 64
@@ -441,35 +328,6 @@ if __name__ == "__main__":
         # Save model
         torch.save(model.state_dict(), args[2])
 
-    elif args[0] == 'sample':
-        import matplotlib.pyplot as plt
-        import numpy as np
-
-        # Load the model
-        model.load_state_dict(torch.load(args[2], map_location=torch.device(args[4]),weights_only=True))
-
-        # Generate samples
-        model.eval()
-        with torch.no_grad():
-            samples = (model.sample((10000,D))).cpu() 
-
-        # Transform the samples back to the original space
-        samples = samples /2 + 0.5
-
-        # Plot the density of the toy data and the model samples
-        coordinates = [[[x,y] for x in np.linspace(*toy.xlim, 1000)] for y in np.linspace(*toy.ylim, 1000)]
-        prob = torch.exp(toy().log_prob(torch.tensor(coordinates)))
-
-        fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-        im = ax.imshow(prob, extent=[toy.xlim[0], toy.xlim[1], toy.ylim[0], toy.ylim[1]], origin='lower', cmap='YlOrRd')
-        ax.scatter(samples[:, 0], samples[:, 1], s=1, c='black', alpha=0.5)
-        ax.set_xlim(toy.xlim)
-        ax.set_ylim(toy.ylim)
-        ax.set_aspect('equal')
-        fig.colorbar(im)
-        plt.savefig(args[1] + args[3])
-        plt.close()
-
     elif args[0] == 'sampleMnist':
         model.load_state_dict(torch.load(args[2], map_location=torch.device(args[4]),weights_only=True))
 
@@ -485,3 +343,40 @@ if __name__ == "__main__":
 
         grid = make_grid(samples, nrow=8, padding=2)
         save_image(grid, args[1] + args[3])
+
+    elif args[0] == 'compareMnist':
+        model.load_state_dict(torch.load('UnetMnistmodel.pt', map_location=torch.device(args[4]),weights_only=True))
+
+        # Generate samples
+        model.eval()
+        with torch.no_grad():
+            samples1 = (model.sample((4,D))).cpu()
+        samples1 = samples1.view(-1, 1, 28, 28)
+        samples1 = samples1/2 + 0.5
+        print("hej1")
+        
+        #model = latentDDPM(network, T=T).to(args[4])
+        model.load_state_dict(torch.load('UnetMnistmodel.pt', map_location=torch.device(args[4]),weights_only=True))
+
+        # Generate samples
+        model.eval()
+        with torch.no_grad():
+            samples2 = (model.sample((4,D))).cpu()
+        samples2 = samples2.view(-1, 1, 28, 28)
+        samples2 = samples2/2 + 0.5
+        print("hej2")
+
+        #model = VAE(network, T=T).to(args[4])
+        model.load_state_dict(torch.load('UnetMnistmodel.pt', map_location=torch.device(args[4]),weights_only=True))
+
+        # Generate samples
+        model.eval()
+        with torch.no_grad():
+            samples3 = (model.sample((4,D))).cpu()
+        samples3 = samples3.view(-1, 1, 28, 28)
+        samples3 = samples3/2 + 0.5
+        print("hej3")
+
+        combine = torch.cat([samples1, samples2, samples3], dim=0)
+        grid = make_grid(combine, nrow=4, padding=2)
+        save_image(grid, "MnistComparison.png")
