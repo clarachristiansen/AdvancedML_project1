@@ -514,20 +514,20 @@ if __name__ == "__main__":
         train_vae(model, optimizer, mnist_train_loader, args.epochs, device)
 
         # Save model
-        torch.save(model.state_dict(), f"Project1/{args.prior}VAE{beta}.pt")
+        torch.save(model.state_dict(), f"models/{args.prior}VAE{beta}.pt")
 
     elif args.mode == 'sample':
-        model.load_state_dict(torch.load(f"Project1/{args.prior}VAE{beta}.pt", map_location=device,weights_only=True))
+        model.load_state_dict(torch.load(f"models/{args.prior}VAE{beta}.pt", map_location=device,weights_only=True))
 
         # Generate samples
         model.eval()
         with torch.no_grad():
             samples = (model.sample(64)).cpu()
             samples = samples / 2 + 0.5
-            save_image(samples.view(64, 1, 28, 28), f"Project1/{args.prior}{args.beta}{args.samples}")
+            save_image(samples.view(64, 1, 28, 28), f"Samples/{args.prior}{args.beta}{args.samples}")
 
     elif args.mode == 'evaluate':
-        model.load_state_dict(torch.load(f"Project1/{args.prior}VAE{beta}.pt", map_location=device))
+        model.load_state_dict(torch.load(f"models/{args.prior}VAE{beta}.pt", map_location=device))
         avg_elbo = evaluate_elbo(model, mnist_test_loader, device)
         #print("Test ELBO (nats / example):", avg_elbo)
         print(f"RESULT seed={args.seed} test_elbo={avg_elbo}")
@@ -540,6 +540,6 @@ if __name__ == "__main__":
         print(z.mean())
         print(z.std())
 
-    # python Project1/VAE.py train --prior gaus --samples Samples.png --device cuda --batch-size 128 --epochs 80 --latent-dim 64 --beta 1e-6
-    # python Project1/VAE.py sample --prior flow --samples Samples.png --device cuda --batch-size 128 --epochs 80 --latent-dim 64 --beta 1.0
-    # python Project1/VAE.py evaluate --prior flow --samples Samples.png --device cuda --batch-size 128 --epochs 80 --latent-dim 64 --beta 1.0
+    # python betaVAE.py train --prior flow --samples Samples.png --device cuda --batch-size 128 --epochs 80 --latent-dim 64 --beta 1.0
+    # python betaVAE.py sample --prior flow --samples Samples.png --device cuda --batch-size 128 --epochs 80 --latent-dim 64 --beta 1.0
+    # python betaVAE.py evaluate --prior flow --samples Samples.png --device cuda --batch-size 128 --epochs 80 --latent-dim 64 --beta 1.0
