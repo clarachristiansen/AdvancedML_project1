@@ -8,8 +8,6 @@ import torch.nn.functional as F
 from torch.distributions.mixture_same_family import MixtureSameFamily
 from tqdm import tqdm
 
-# test = 0
-
 class DDPM(nn.Module):
     def __init__(self, network, beta_1=1e-4, beta_T=2e-2, T=100):
         """
@@ -61,18 +59,6 @@ class DDPM(nn.Module):
 
         neg_elbo = F.mse_loss(epsilon_theta, epsilon, reduction='none')
         neg_elbo = neg_elbo.sum(dim=1)
-
-        # global test
-        # if test == 0:
-        #     print(x.shape)
-        #     print(t.shape)
-        #     print(epsilon.shape)
-        #     print(alpha_bar_t.shape)
-        #     print(x_t.shape)
-        #     print(t_normal.shape)
-        #     print(epsilon_theta.shape)
-        #     print(neg_elbo.shape)
-        #     test += 1
 
         return neg_elbo
 
@@ -251,9 +237,8 @@ if __name__ == "__main__":
     from torchvision import datasets, transforms
     from torchvision.utils import save_image, make_grid
 
-    import fid
-    #          mode        data          model            sample save    device batch epo  lr
-    args = ['computeFid', 'mnist', 'UnetMnistmodel.pt', 'Unetsamples.png', 'cpu', 10, 100, 1e-3]
+    #        mode      data       model       sample save  device batch epo  lr    beta  prior
+    args = ['sample', 'mnist', 'Unetmodel', 'samples.png', 'cpu', 1000, 150, 3e-4, 1.0, "gaus"]
 
     transform = transform = transforms.Compose([transforms.ToTensor(), 
                                                 transforms.Lambda(lambda x : x + torch.rand(x.shape)/255.0), 
@@ -264,19 +249,13 @@ if __name__ == "__main__":
 
     # Get the dimension of the dataset
     D = next(iter(train_loader))[0].shape[1]
-
-    # Define the network
-    num_hidden = 64
+    
     network = Unet()
-
-    # Set the number of steps in the diffusion process
     T = 1000
+    model = DDPM(network, T=T).to(args[4])
 
     # Choose mode to run
     if args[0] == 'train':
-        # Define model
-        model = DDPM(network, T=T).to(args[4])
-
         # Define optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=args[7])
 
@@ -284,122 +263,16 @@ if __name__ == "__main__":
         train(model, optimizer, train_loader, args[6], args[4])
 
         # Save model
-        torch.save(model.state_dict(), args[2])
+        torch.save(model.state_dict(), f"Project1/{args[2]}.pt")
 
-    elif args[0] == 'sampleMnist':
-        # Define model
-        model = DDPM(network, T=T).to(args[4])
-        model.load_state_dict(torch.load(args[2], map_location=torch.device(args[4]),weights_only=True))
+    elif args[0] == 'sample':
+        model.load_state_dict(torch.load(f"Project1/{args[2]}.pt", map_location=torch.device(args[4]),weights_only=True))
 
         # Generate samples
         model.eval()
         with torch.no_grad():
             samples = (model.sample((64,D))).cpu() 
-        
         samples = samples.view(-1, 1, 28, 28)
-
-        # Transform the samples back to the original space
         samples = samples/2 + 0.5
-
         grid = make_grid(samples, nrow=8, padding=2)
-        save_image(grid, args[1] + args[3])
-
-    elif args[0] == "computeFid":
-        import time
-        samples = args[5]
-
-        real_batch = next(iter(train_loader))[0]
-
-        real_batch = real_batch.view(-1, 1, 28, 28)
-        print(real_batch.shape)
-        
-        # Define model
-        model = DDPM(network, T=T).to(args[4])
-        model.load_state_dict(torch.load('UnetMnistmodel.pt', map_location=torch.device(args[4]),weights_only=True))
-
-        model.eval()
-        t1 = time.time()
-        with torch.no_grad():
-            batch = (model.sample((args[5],D))).cpu()
-        t2 = time.time()
-        batch = batch.view(-1, 1, 28, 28)
-
-        print(f"Time for {samples} samples for model latent DDPM = {t2-t1}")
-        print(f"{(t2-t1)/samples} seconds per sample")
-
-        fid_res = fid.compute_fid(real_batch, batch, args[4])
-        print(f"Fid for DDPM: {fid_res}")
-
-        #Implement code to work for different values of beta in the VAE
-        #model = latentDDPM(network, T=T).to(args[4])
-        model.load_state_dict(torch.load('UnetMnistmodel.pt', map_location=torch.device(args[4]),weights_only=True))
-        model.eval()
-        t1 = time.time()
-        with torch.no_grad():
-            batch = (model.sample((args[5],D))).cpu()
-        t2 = time.time()
-        batch = batch.view(-1, 1, 28, 28)
-
-        print(f"Time for {samples} samples for model latent DDPM = {t2-t1}")
-        print(f"{(t2-t1)/samples} seconds per sample")
-
-        fid_res = fid.compute_fid(real_batch, batch, args[4])
-        print(f"Fid for DDPM: {fid_res}")
-
-        #model = latentDDPM(network, T=T).to(args[4])
-        model.load_state_dict(torch.load('UnetMnistmodel.pt', map_location=torch.device(args[4]),weights_only=True))
-        model.eval()
-        t1 = time.time()
-        with torch.no_grad():
-            batch = (model.sample((args[5],D))).cpu()
-        t2 = time.time()
-        batch = batch.view(-1, 1, 28, 28)
-
-        print(f"Time for {samples} samples for model latent DDPM = {t2-t1}")
-        print(f"{(t2-t1)/samples} seconds per sample")
-
-        fid_res = fid.compute_fid(real_batch, batch, args[4])
-        print(f"Fid for DDPM: {fid_res}")
-
-    elif args[0] == 'compareMnist':
-        # Define model
-        model = DDPM(network, T=T).to(args[4])
-        model.load_state_dict(torch.load('UnetMnistmodel.pt', map_location=torch.device(args[4]),weights_only=True))
-
-        # Generate samples
-        model.eval()
-        with torch.no_grad():
-            samples1 = (model.sample((4,D))).cpu()
-        samples1 = samples1.view(-1, 1, 28, 28)
-        samples1 = samples1/2 + 0.5
-        print("hej1")
-        
-        #model = latentDDPM(network, T=T).to(args[4])
-        model.load_state_dict(torch.load('UnetMnistmodel.pt', map_location=torch.device(args[4]),weights_only=True))
-
-        # Generate samples
-        model.eval()
-        with torch.no_grad():
-            samples2 = (model.sample((4,D))).cpu()
-        samples2 = samples2.view(-1, 1, 28, 28)
-        samples2 = samples2/2 + 0.5
-        print("hej2")
-
-        #model = VAE(network, T=T).to(args[4])
-        model.load_state_dict(torch.load('UnetMnistmodel.pt', map_location=torch.device(args[4]),weights_only=True))
-
-        # Generate samples
-        model.eval()
-        with torch.no_grad():
-            samples3 = (model.sample((4,D))).cpu()
-        samples3 = samples3.view(-1, 1, 28, 28)
-        samples3 = samples3/2 + 0.5
-        print("hej3")
-
-        combine = torch.cat([samples1, samples2, samples3], dim=0)
-        grid = make_grid(combine, nrow=4, padding=2)
-        save_image(grid, "MnistComparison.png")
-    
-    elif args[0] == "plotPrior":
-        #Create code for plotting the prior, learned dimensions of latent DDPM and posterior
-        hej = 0
+        save_image(grid, f"Project1/Unet{args[1]}{args[3]}")

@@ -1,0 +1,25 @@
+torch.Size([10000, 1, 28, 28])
+torch.Size([10000, 1, 28, 28])
+Time for 10000 samples for model DDPM = 59.423155069351196
+0.00594231550693512 seconds per sample
+Fid for DDPM: 0.9055367455941408
+torch.Size([10000, 1, 28, 28])
+Time for 10000 samples for model LatentDDPM1e-06 = 0.7033050060272217
+7.033050060272217e-05 seconds per sample
+Fid for LatentDDPM1e-06: 10.207679743174417
+torch.Size([10000, 1, 28, 28])
+Time for 10000 samples for model LatentDDPM0.5 = 0.6845874786376953
+6.845874786376953e-05 seconds per sample
+Fid for LatentDDPM0.5: 7.104399901390432
+torch.Size([10000, 1, 28, 28])
+Time for 10000 samples for model LatentDDPM1.0 = 0.6854519844055176
+6.854519844055175e-05 seconds per sample
+Fid for LatentDDPM1.0: 3.122228251369375
+torch.Size([10000, 1, 28, 28])
+Time for 10000 samples for model LatentDDPM2.0 = 0.7587060928344727
+7.587060928344727e-05 seconds per sample
+Fid for LatentDDPM2.0: 5.687457578355461
+torch.Size([10000, 1, 28, 28])
+Time for 10000 samples for model VAE = 0.029904842376708984
+2.9904842376708983e-06 seconds per sample
+Fid for VAE: 1.6636696147866608

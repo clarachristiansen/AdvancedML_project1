@@ -69,7 +69,7 @@ class DDPM(nn.Module):
         loss = F.mse_loss(epsilon_theta, epsilon, reduction='none')
         return loss.sum(dim=1)
 
-    def sample(self, num):
+    def sample(self, num, decode=True):
         """
         Sample from the model.
 
@@ -106,6 +106,9 @@ class DDPM(nn.Module):
                 z_t = mean
         
         #Decode for sampling
+        if not decode:
+            return z_t
+
         with torch.no_grad():
             x = self.vae.decoder(z_t)
             x_samples = x.mean
@@ -198,7 +201,7 @@ if __name__ == "__main__":
     from torchvision.utils import save_image, make_grid
 
     #          mode     data          model       sample save    device batch epo  lr   beta    prior
-    args = ['sample', 'mnist', 'Latentmodel', 'Latentsamples.png', 'cpu', 32, 150, 3e-4, 1.0, "gaus"]
+    args = ['sample', 'mnist', 'Latentmodel', 'Latentsamples.png', 'cpu', 32, 150, 3e-4, 2.0, "gaus"]
 
     transform = transform = transforms.Compose([transforms.ToTensor(), 
                                                 transforms.Lambda(lambda x : x + torch.rand(x.shape)/255.0), 
@@ -267,7 +270,7 @@ if __name__ == "__main__":
     decoder = betaVAE.GaussianDecoderPixelVar(decoder_net, init_sigma=0.1)
     encoder = betaVAE.GaussianEncoder(encoder_net)
     vae = betaVAE.VAE(prior, decoder, encoder, beta=args[8])
-    vae.load_state_dict(torch.load(f"models/{args[9]}VAE{args[8]}.pt", map_location=torch.device(args[4]),weights_only=True))
+    vae.load_state_dict(torch.load(f"Project1/{args[9]}VAE{args[8]}.pt", map_location=torch.device(args[4]),weights_only=True))
     vae.eval()
     for p in vae.parameters():
         p.requires_grad = False
@@ -284,9 +287,9 @@ if __name__ == "__main__":
         train_ddpm(model, optimizer, train_loader, args[6], args[4])
 
         # Save model
-        torch.save(model.state_dict(), f"models/{args[9]}{args[2]}{args[8]}.pt")
+        torch.save(model.state_dict(), f"Project1/{args[9]}{args[2]}{args[8]}.pt")
     if args[0] == 'sample':
-        model.load_state_dict(torch.load(f"models/{args[9]}{args[2]}{args[8]}.pt", map_location=torch.device(args[4]),weights_only=True))
+        model.load_state_dict(torch.load(f"Project1/{args[9]}{args[2]}{args[8]}.pt", map_location=torch.device(args[4]),weights_only=True))
         model.eval()
         with torch.no_grad():
             samples = model.sample(64)
@@ -298,4 +301,4 @@ if __name__ == "__main__":
         print(samples.min(), samples.max())
 
         grid = make_grid(samples, nrow=8)
-        save_image(grid, f"Samples/{args[9]}{args[1]}{args[8]}{args[3]}")
+        save_image(grid, f"Project1/{args[9]}{args[1]}{args[8]}{args[3]}")
