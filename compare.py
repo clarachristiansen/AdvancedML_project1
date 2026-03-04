@@ -135,7 +135,7 @@ def evalFid(model, model_name, real_batch, num_samp, D, device):
     print(f"Fid for {model_name}: {fid_res}")
 
 #        mode       device  batch 
-args = ['plot', 'cuda', 256]
+args = ['plot', 'cuda', 10000]
 
 #load data
 transform = transform = transforms.Compose([transforms.ToTensor(), 
@@ -205,9 +205,7 @@ elif args[0] == "plot":
 
     #Posterior
     z_post = []
-
     with torch.no_grad():
-        
         for x in iter(train_loader):
             if isinstance(x, (list, tuple)):
                 x = x[0]
@@ -222,7 +220,7 @@ elif args[0] == "plot":
     z_post = torch.cat(z_post)[:num_samples].cpu()
     print(z_post.shape)
 
-    #VAE prior
+    #prior
     with torch.no_grad():
         z_prior = vae.prior().sample(torch.Size([num_samples])).cpu()
     print(z_prior.shape)
@@ -232,11 +230,11 @@ elif args[0] == "plot":
         z_ddpm = model.sample(num_samples, decode=False).cpu()
     print(z_ddpm.shape)
 
-    #pca
+    #pca, ugly implementation but i could not find a better one
     all_z = torch.cat([z_post, z_prior, z_ddpm], dim=0).numpy()
     pca = PCA(n_components=2)
     all_2d = pca.fit_transform(all_z)
-
+    
     z_post_2d  = all_2d[:num_samples]
     z_prior_2d = all_2d[num_samples:2*num_samples]
     z_ddpm_2d  = all_2d[2*num_samples:]
@@ -264,6 +262,6 @@ elif args[0] == "plot":
     plt.ylabel("PC2")
     plt.axis("equal")
 
-    plt.suptitle(f"Latent Distribution Comparison", fontsize=16)
+    plt.suptitle("Latent Distribution Comparison", fontsize=16)
     plt.tight_layout()
     plt.savefig("Project1/plot.png")
