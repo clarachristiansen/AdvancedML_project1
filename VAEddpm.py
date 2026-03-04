@@ -198,7 +198,7 @@ if __name__ == "__main__":
     from torchvision.utils import save_image, make_grid
 
     #          mode     data          model       sample save    device batch epo  lr   beta    prior
-    args = ['sample', 'mnist', 'Latentmodel', 'Latentsamples.png', 'cuda', 32, 150, 3e-4, 1.0, "gaus"]
+    args = ['sample', 'mnist', 'Latentmodel', 'Latentsamples.png', 'cpu', 32, 150, 3e-4, 1.0, "gaus"]
 
     transform = transform = transforms.Compose([transforms.ToTensor(), 
                                                 transforms.Lambda(lambda x : x + torch.rand(x.shape)/255.0), 

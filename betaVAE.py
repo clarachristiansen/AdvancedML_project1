@@ -540,6 +540,6 @@ if __name__ == "__main__":
         print(z.mean())
         print(z.std())
 
-    # python betaVAE.py train --prior flow --samples Samples.png --device cuda --batch-size 128 --epochs 80 --latent-dim 64 --beta 1.0
-    # python betaVAE.py sample --prior flow --samples Samples.png --device cuda --batch-size 128 --epochs 80 --latent-dim 64 --beta 1.0
-    # python betaVAE.py evaluate --prior flow --samples Samples.png --device cuda --batch-size 128 --epochs 80 --latent-dim 64 --beta 1.0
+    # python betaVAE.py train --prior flow --samples Samples.png --device cpu --batch-size 128 --epochs 80 --latent-dim 64 --beta 1.0
+    # python betaVAE.py sample --prior flow --samples Samples.png --device cpu --batch-size 128 --epochs 80 --latent-dim 64 --beta 1.0
+    # python betaVAE.py evaluate --prior flow --samples Samples.png --device cpu --batch-size 128 --epochs 80 --latent-dim 64 --beta 1.0
