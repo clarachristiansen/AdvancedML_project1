@@ -420,7 +420,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', type=str, default='train', choices=['train', 'sample', 'sample_mean', 'evaluate', 'plot_posterior', 'plot_all'], help='what to do when running the script (default: %(default)s)')
     parser.add_argument('--prior', type=str, default='gaus', choices=['gaus', 'flow'], help='What prior to use (default: %(default)s)')
-    parser.add_argument('--mask', type=str, default='normal', choices=['normal', 'random'], help='what mask to use (default: %(default)s)')
     parser.add_argument('--samples', type=str, default='samples.png', help='file to save samples in (default: %(default)s)')
     parser.add_argument('--device', type=str, default='cuda', choices=['cpu', 'cuda', 'mps'], help='torch device (default: %(default)s)')
     parser.add_argument('--batch-size', type=int, default=32, metavar='N', help='batch size for training (default: %(default)s)')
@@ -441,12 +440,12 @@ if __name__ == "__main__":
     random.seed(args.seed)
 
 
-    mnist_train_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train=True, download=True,
-                                                                    transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: x.squeeze())])),
-                                                    batch_size=64, shuffle=True)
-    mnist_test_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train=False, download=True,
-                                                                    transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: x.squeeze())])),
-                                                    batch_size=64, shuffle=True)
+    transform = transform = transforms.Compose([transforms.ToTensor(), 
+                                                transforms.Lambda(lambda x : x + torch.rand(x.shape)/255.0), 
+                                                transforms.Lambda(lambda x : (x-0.5)*2.0),
+                                                transforms.Lambda(lambda x : x.squeeze())])
+    mnist_train_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train = True, download = True, transform = transform), batch_size=args.batch_size, shuffle=True)
+    mnist_test_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train = False, download = True, transform = transform), batch_size=args.batch_size, shuffle=True)
 
     # Define prior distribution
     M = args.latent_dim
@@ -455,21 +454,16 @@ if __name__ == "__main__":
         # Define prior distribution
         transformations = []
         num_transformations = 16
-        num_hidden = 256
+        num_hidden = 512
         M = args.latent_dim
         latent_dim = M
         base = GaussianBase(latent_dim)
 
-        if args.mask == 'normal':
-            # Make a mask that is 1 for the first half of the features and 0 for the second half
-            mask = torch.zeros((latent_dim,))
-            mask[latent_dim//2:] = 1
+        mask = torch.zeros((latent_dim,))
+        mask[latent_dim//2:] = 1
 
         for i in range(num_transformations):
-            if args.mask == 'random':
-                mask = torch.randint(0, 2, (latent_dim,), dtype=torch.float32)
-            elif args.mask == 'normal':
-                mask = (1-mask) # Flip the mask
+            mask = (1-mask) # Flip the mask
             
             scale_net = nn.Sequential(nn.Linear(latent_dim, num_hidden), nn.ReLU(), nn.Linear(num_hidden, num_hidden), nn.ReLU(), nn.Linear(num_hidden, latent_dim))
             translation_net = nn.Sequential(nn.Linear(latent_dim, num_hidden), nn.ReLU(), nn.Linear(num_hidden, num_hidden), nn.ReLU(), nn.Linear(num_hidden, latent_dim))
@@ -482,7 +476,9 @@ if __name__ == "__main__":
     # Define encoder and decoder networks
     encoder_net = nn.Sequential(
         nn.Flatten(),
-        nn.Linear(784, 512),
+        nn.Linear(28*28, 512),
+        nn.ReLU(),
+        nn.Linear(512, 512),
         nn.ReLU(),
         nn.Linear(512, 512),
         nn.ReLU(),
@@ -494,7 +490,10 @@ if __name__ == "__main__":
         nn.ReLU(),
         nn.Linear(512, 512),
         nn.ReLU(),
-        nn.Linear(512, 784),
+        nn.Linear(512, 512),
+        nn.ReLU(),
+        nn.Linear(512, 28*28),
+        nn.Tanh(),
         nn.Unflatten(-1, (28, 28))
     )
 
@@ -523,27 +522,9 @@ if __name__ == "__main__":
         # Generate samples
         model.eval()
         with torch.no_grad():
-            samples = (model.sample(64)).cpu() 
-            save_image(samples.view(64, 1, 28, 28), args.samples)
-    elif args.mode == "sample_mean":
-        model.load_state_dict(torch.load(f"Project1/{args.prior}VAE{beta}.pt", map_location=device,weights_only=True))
-
-        # Generate samples
-        model.eval()
-        with torch.no_grad():
-            if args.prior == 'flow':
-                z = model.prior.sample((64,))
-            else:
-                z = model.prior().sample((64,))  # [64, M]
-            dist = model.decoder(z) # [64, 28, 28]
-            x_sample = dist.sample() # [64, 28, 28]
-            x_mean = dist.mean  # [64, 28, 28]
-
-            x_sample = x_sample.clamp(0, 1).unsqueeze(1)  # [64,1,28,28]
-            x_mean   = x_mean.clamp(0, 1).unsqueeze(1)
-
-            save_image(x_sample, args.samples + '_sample.png')
-            save_image(x_mean, args.samples + '_mean.png')
+            samples = (model.sample(64)).cpu()
+            samples = samples / 2 + 0.5
+            save_image(samples.view(64, 1, 28, 28), f"Project1/{args.prior}{args.beta}{args.samples}")
 
     elif args.mode == 'evaluate':
         model.load_state_dict(torch.load(f"Project1/{args.prior}VAE{beta}.pt", map_location=device))
@@ -559,6 +540,6 @@ if __name__ == "__main__":
         print(z.mean())
         print(z.std())
 
-    # python Project1/VAE.py train --prior flow --mask normal --samples Project1/samples.png --device cuda --batch-size 128 --epochs 50 --latent-dim 64 --beta 1.0
-    # python Project1/VAE.py sample --prior flow --mask normal --samples Project1/samples.png --device cuda --batch-size 128 --epochs 50 --latent-dim 64 --beta 1.0
-    # python Project1/VAE.py evaluate --prior flow --mask normal --samples Project1/samples.png --device cuda --batch-size 128 --epochs 50 --latent-dim 64 --beta 1.0
+    # python Project1/VAE.py train --prior gaus --samples Samples.png --device cuda --batch-size 128 --epochs 80 --latent-dim 64 --beta 1e-6
+    # python Project1/VAE.py sample --prior flow --samples Samples.png --device cuda --batch-size 128 --epochs 80 --latent-dim 64 --beta 1.0
+    # python Project1/VAE.py evaluate --prior flow --samples Samples.png --device cuda --batch-size 128 --epochs 80 --latent-dim 64 --beta 1.0

@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
 
-import betaVAE as VAE
+import betaVAE 
 
 class DDPM(nn.Module):
     def __init__(self, network, vae, beta_1=1e-4, beta_T=2e-2, T=100):
@@ -37,9 +37,6 @@ class DDPM(nn.Module):
     def encode(self, x):
         with torch.no_grad():
             z = self.vae.encoder(x).rsample()
-            #z = q.mean #maybe q.rsample()
-
-        # z = (z - z.mean(dim=0, keepdim=True)) / (z.std(dim=0, keepdim=True) + 1e-6) chatgpt said to maybe standardize? But it does not seem to improve the model
         return z
     
     def negative_elbo(self, x):
@@ -84,7 +81,7 @@ class DDPM(nn.Module):
             The generated samples.
         """
         device = self.alpha.device
-        z_dim = self.vae.prior().event_shape[0]
+        z_dim = self.vae.encoder.encoder_net[-1].out_features // 2
 
         # Sample z_t for t=T (i.e., Gaussian noise)
         z_t = torch.randn(num, z_dim, device=device)
@@ -179,6 +176,7 @@ class FcNetwork(nn.Module):
         self.network = nn.Sequential(nn.Linear(input_dim+1, num_hidden), nn.ReLU(), 
                                      nn.Linear(num_hidden, num_hidden), nn.ReLU(), 
                                      nn.Linear(num_hidden, num_hidden), nn.ReLU(),
+                                     nn.Linear(num_hidden, num_hidden), nn.ReLU(),
                                      nn.Linear(num_hidden, input_dim))
 
     def forward(self, x, t):
@@ -199,8 +197,8 @@ if __name__ == "__main__":
     from torchvision import datasets, transforms
     from torchvision.utils import save_image, make_grid
 
-    #          mode     data          model       sample save    device batch epo  lr   beta
-    args = ['train', 'mnist', 'Latentmodel', 'Latentsamples.png', 'cuda', 32, 150, 3e-4, 1.0]
+    #          mode     data          model       sample save    device batch epo  lr   beta    prior
+    args = ['sample', 'mnist', 'Latentmodel', 'Latentsamples.png', 'cuda', 32, 150, 3e-4, 1.0, "gaus"]
 
     transform = transform = transforms.Compose([transforms.ToTensor(), 
                                                 transforms.Lambda(lambda x : x + torch.rand(x.shape)/255.0), 
@@ -214,19 +212,39 @@ if __name__ == "__main__":
 
     # Define the network
     latent_dim = 64
-    hidden_dim = 512
-    network = FcNetwork(latent_dim, hidden_dim) #This num hidden and the one in the en- and decoders does not need to match but that is how i have implemented it right now
+    hidden_dim = 512 #This num hidden and the one in the en- and decoders does not need to match but that is how i have implemented it right now
+    network = FcNetwork(latent_dim, hidden_dim) 
 
     # Set the number of steps in the diffusion process
-    T = 200
+    T = 500
 
-    # Define prior distribution
-    prior = VAE.GaussianPrior(latent_dim)
+    if args[9] == "flow":
+        # Define prior distribution
+        transformations = []
+        num_transformations = 16
+        num_hidden = 512
+        base = betaVAE.GaussianBase(latent_dim)
+
+        mask = torch.zeros((latent_dim,))
+        mask[latent_dim//2:] = 1
+
+        for i in range(num_transformations):
+            mask = (1-mask) # Flip the mask
+            
+            scale_net = nn.Sequential(nn.Linear(latent_dim, num_hidden), nn.ReLU(), nn.Linear(num_hidden, num_hidden), nn.ReLU(), nn.Linear(num_hidden, latent_dim))
+            translation_net = nn.Sequential(nn.Linear(latent_dim, num_hidden), nn.ReLU(), nn.Linear(num_hidden, num_hidden), nn.ReLU(), nn.Linear(num_hidden, latent_dim))
+            
+            transformations.append(betaVAE.MaskedCouplingLayer(scale_net, translation_net, mask))
+        prior = betaVAE.Flow(base, transformations)
+    elif args[9] == "gaus":
+        prior = betaVAE.GaussianPrior(latent_dim)
 
     # Define encoder and decoder networks
     encoder_net = nn.Sequential(
         nn.Flatten(),
         nn.Linear(28*28, 512),
+        nn.ReLU(),
+        nn.Linear(512, 512),
         nn.ReLU(),
         nn.Linear(512, 512),
         nn.ReLU(),
@@ -238,15 +256,18 @@ if __name__ == "__main__":
         nn.ReLU(),
         nn.Linear(512, 512),
         nn.ReLU(),
+        nn.Linear(512, 512),
+        nn.ReLU(),
         nn.Linear(512, 28*28),
+        nn.Tanh(),
         nn.Unflatten(-1, (28, 28))
     )
 
     # Define VAE model
-    decoder = VAE.GaussianDecoderPixelVar(decoder_net, init_sigma=0.1)
-    encoder = VAE.GaussianEncoder(encoder_net)
-    vae = VAE.VAE(prior, decoder, encoder, beta=args[8])
-    vae.load_state_dict(torch.load(f"Project1/VAE{args[8]}.pt", map_location=torch.device(args[4]),weights_only=True))
+    decoder = betaVAE.GaussianDecoderPixelVar(decoder_net, init_sigma=0.1)
+    encoder = betaVAE.GaussianEncoder(encoder_net)
+    vae = betaVAE.VAE(prior, decoder, encoder, beta=args[8])
+    vae.load_state_dict(torch.load(f"Project1/{args[9]}VAE{args[8]}.pt", map_location=torch.device(args[4]),weights_only=True))
     vae.eval()
     for p in vae.parameters():
         p.requires_grad = False
@@ -263,14 +284,18 @@ if __name__ == "__main__":
         train_ddpm(model, optimizer, train_loader, args[6], args[4])
 
         # Save model
-        torch.save(model.state_dict(), f"Project1/{args[2]}{args[8]}.pt")
+        torch.save(model.state_dict(), f"Project1/{args[9]}{args[2]}{args[8]}.pt")
     if args[0] == 'sample':
-        model.load_state_dict(torch.load(f"Project1/{args[2]}{args[8]}.pt", map_location=torch.device(args[4]),weights_only=True))
+        model.load_state_dict(torch.load(f"Project1/{args[9]}{args[2]}{args[8]}.pt", map_location=torch.device(args[4]),weights_only=True))
         model.eval()
         with torch.no_grad():
             samples = model.sample(64)
         samples = samples.view(-1, 1, 28, 28)
+        print("min/max pre")
+        print(samples.min(), samples.max())
         samples = samples / 2 + 0.5
+        print("min/max post")
+        print(samples.min(), samples.max())
 
         grid = make_grid(samples, nrow=8)
-        save_image(grid, f"Project1/{args[1]}{args[8]}{args[3]}")
+        save_image(grid, f"Project1/{args[9]}{args[1]}{args[8]}{args[3]}")
